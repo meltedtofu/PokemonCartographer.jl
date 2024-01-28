@@ -1,0 +1,28 @@
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.10.0"
+manifest_format = "2.0"
+project_hash = "025ad39c0741556ee80df25b9d5ec677251f6931"
+
+[[deps.GameBoy]]
+deps = ["OffsetArrays"]
+git-tree-sha1 = "35597f0db2cc741481285742d5bda9a9e0131346"
+uuid = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
+version = "0.9.0"
+
+[[deps.OffsetArrays]]
+git-tree-sha1 = "6a731f2b5c03157418a20c12195eb4b74c8f8621"
+uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+version = "1.13.0"
+
+    [deps.OffsetArrays.extensions]
+    OffsetArraysAdaptExt = "Adapt"
+
+    [deps.OffsetArrays.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+
+[[deps.PokemonObserver]]
+deps = ["GameBoy"]
+git-tree-sha1 = "54dd21a52f00cbeea13e57ef34583cb80f5a7e5e"
+uuid = "31212b72-6cb2-4d94-82c6-71d6f93632ce"
+version = "0.5.0"
