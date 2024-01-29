@@ -1,5 +1,7 @@
 module PokemonCartographer
 
+include("Nav.jl")
+
 # using distributed pump out requests to run a rom with a save state for x frames and collect the results.
 # Sticking with a single computer for now, but should be easy enough to go wider when we get there
 # (local distributed for now) (figure out shared filesystem with something like sshfs)
