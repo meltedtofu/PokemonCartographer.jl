@@ -34,6 +34,22 @@ function Navmesh!(n::Navmesh, from::Position, to::Position, d::Direction)::Nothi
     nothing
 end
 
+function Navmesh(a::Navmesh, b::Navmesh)::Navmesh
+    n = Navmesh()
+
+    for x in [a, b]
+        for l in labels(x)
+            n[l] = nothing
+        end
+
+        for el in edge_labels(x)
+            n[el...] = x[el...]
+        end
+    end
+
+    n
+end
+
 function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     try
         Graphs.a_star(n,
@@ -49,7 +65,6 @@ function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     end
 end
 
-# TODO: Merge Navmeshes
 # TODO: Render Navmesh as Matrix
 # TODO: Render Navmesh as Ascii
 

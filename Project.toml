@@ -1,7 +1,7 @@
 name = "PokemonCartographer"
 uuid = "a1f5f57e-fd11-4ac4-93c7-988ef3f0997f"
 authors = ["Melted Tofu <melted@meltedtofu.com>"]
-version = "0.0.1"
+version = "0.0.2"
 
 [deps]
 GameBoy = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
