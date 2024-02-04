@@ -4,7 +4,11 @@ authors = ["Melted Tofu <melted@meltedtofu.com>"]
 version = "0.0.2"
 
 [deps]
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 GameBoy = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
 MetaGraphsNext = "fa8bd995-216d-47f1-8a91-f3b68fbeb377"
 PokemonObserver = "31212b72-6cb2-4d94-82c6-71d6f93632ce"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"

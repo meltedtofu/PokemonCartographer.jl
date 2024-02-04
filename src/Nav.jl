@@ -2,6 +2,7 @@ module Nav
 
 using Graphs
 using MetaGraphsNext
+using GameBoy: Button, ButtonUp, ButtonRight, ButtonDown, ButtonLeft
 
 struct Position
     location::UInt8
@@ -9,11 +10,36 @@ struct Position
     y::UInt8
 
     Position(l, x, y) = new(l, x, y)
+    Position(p) = new(p...)
 end
 
 @enum Direction Up Right Down Left
 
-export Up, Right, Down, Left
+function asbutton(d::Direction)::Button
+    if d == Up
+        ButtonUp
+    elseif d == Right
+        ButtonRight
+    elseif d == Down
+        ButtonDown
+    elseif d == Left
+        ButtonLeft
+    end
+end
+
+function asdirection(b::Button)::Direction
+    if b == ButtonUp
+        Up
+    elseif b == ButtonRight
+        Right
+    elseif b == ButtonDown
+        Down
+    elseif b == ButtonLeft
+        Left
+    end
+end
+
+export Up, Right, Down, Left, asbutton, asdirection
 
 # Using type parameters to elide the unimportant implementation details of MetaGraphNext.
 # Vertex representation in DiGraph (aka "Code"), Weight Function, Weight.
