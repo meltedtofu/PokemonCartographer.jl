@@ -91,9 +91,11 @@ function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     end
 end
 
+connected(n::Navmesh, from::Position, to::Position)::Bool = from == to || route(n, from, to) |> length > 0
+
 # TODO: Render Navmesh as Matrix
 # TODO: Render Navmesh as Ascii
 
-export Navmesh, Direction, Position, route, Navmesh!
+export Navmesh, Direction, Position, route, connected, Navmesh!
 
 end # module Nav

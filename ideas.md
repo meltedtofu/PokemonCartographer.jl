@@ -7,6 +7,16 @@ This would drastically simplify the logic and decouple my work here from the upc
 I know that Scott (of Scott's Thoughts) has a way to disable wild encounters in particular regions of the map.
 This will probably give some clues.
 
+Apparently there is a "debug_mode" in pokemon that if enabled allows skipping wild battles by holding B.
+Just set Bit 1 of 0xd732.
+Fascinating!
+Do this one next.
+Tried it with "BLUEMONS.gb".
+Still getting wild pokemon.
+Unclear if this is a mythical thing or I'm missing something about the process.
+Moving on for now.
+Returning early if a battle is detected.
+
 # Progress
 Connected components?
 I think the ultimate goal is to have all of the locations provided by the roms connected to each other.

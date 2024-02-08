@@ -738,9 +738,9 @@ version = "0.3.3"
 
 [[deps.PokemonObserver]]
 deps = ["GameBoy"]
-git-tree-sha1 = "dc1d44c10fde8857602bb016d5c40c5faf478453"
+git-tree-sha1 = "c47a9115b72ac560c29bbaed4d5249b55a13afdb"
 uuid = "31212b72-6cb2-4d94-82c6-71d6f93632ce"
-version = "0.5.5"
+version = "0.5.6"
 
 [[deps.PolyesterWeave]]
 deps = ["BitTwiddlingConvenienceFunctions", "CPUSummary", "IfElse", "Static", "ThreadingUtilities"]
