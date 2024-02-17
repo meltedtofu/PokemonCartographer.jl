@@ -15,12 +15,11 @@ using .Nav
 
 struct Job
     romname::String
-    savename::String
     duration::Int
     emulator0::Emulator
     imageprefix::Union{String, Nothing}
 
-    Job(romname, savename, duration, emulator0, imageprefix) = new(romname, savename, duration, emulator0, imageprefix)
+    Job(romname, duration, emulator0, imageprefix) = new(romname, duration, emulator0, imageprefix)
 end
 
 function dojob(job::Job)::Navmesh
@@ -31,41 +30,40 @@ function dojob(job::Job)::Navmesh
 
     gb = deepcopy(job.emulator0)
 
-    # TODO: Enable debug_mode (set bit 1 of 0xd732)
-    # TODO: Ensure that B is constantly pressed (set buttonstate arg to false)
-    # TODO: Check if any of the saves end up with a battle (run it and look at the screenshots)
-    # TODO: That didn't work. Do I need to start a new game for this to take effect? This is doing something, but now I'm stuck in the intro dialog...
-
     for i in 1:job.duration
-        gb.mmu.workram.bytes[0xd732 - 0xc000] |= 0x01
+        gb.mmu.workram.bytes[0xd732 - 0xc000] |= 0x02 # Enable Debug Mode
+        gb.mmu.workram.bytes[0xd747 - 0xc000] |= 0x01 # Followed Oak in to lab
+        gb.mmu.workram.bytes[0xd74b - 0xc000] |= 0xff # Complete most of the intro (following oak, pokedex, ...)
         pixels = doframe!(gb)
         game = GameState(gb, pixels)
         buttonstate!(gb, ButtonA,     true)
-        #buttonstate!(gb, ButtonB,     true)
         buttonstate!(gb, ButtonUp,    true)
         buttonstate!(gb, ButtonDown,  true)
         buttonstate!(gb, ButtonLeft,  true)
         buttonstate!(gb, ButtonRight, true)
 
-        if statenum == 1 # Haven't loaded the game yet keep smashing A
+        if !isnothing(job.imageprefix) && i%300 == 0
+            pixels = doframe!(gb)
+            save(File{format"PNG"}(joinpath("screens", "$(job.imageprefix).$i.png")), reinterpret(BGRA{N0f8}, pixels))
+        end
+
+        if statenum == 1 # Haven't loaded the game yet keep smashing Select to open the Fight/Debug menu
             if isnothing(game.menu)
-                buttonstate!(gb, ButtonA, i%2 == 0)
+                buttonstate!(gb, ButtonSelect, i%2 == 0)
             else
                 statenum = 2
             end
         elseif statenum == 2 ## Select new game
             if isnothing(game.menu)
                 statenum = 3
-            elseif ("NEW GAME", 1) in game.menu
-                buttonstate!(gb, ButtonUp, i%2 == 0)
-            elseif ("CONTINUE", 1) in game.menu
+            elseif ("FIGHT", 1) in game.menu
+                buttonstate!(gb, ButtonDown, i%2 == 0)
+            elseif ("DEBUG", 1) in game.menu
                 buttonstate!(gb, ButtonA, i%2 == 0)
-            elseif ("OPTIONS", 1) in game.menu
-                buttonstate!(gb, ButtonUp, i%2 == 0)
             end
-        elseif statenum == 3 # Unclear why this delay is needed. Just going with it for now.
-            if i < 2*60*60
-                buttonstate!(gb, ButtonA, i%2 == 0)
+        elseif statenum == 3 # Unclear why this delay is needed. Just going with it for now. Think it might be about clearing all of the nickname menus.
+            if i < 1*60*60
+                buttonstate!(gb, ButtonB, i%2 == 0)
             else
                 statenum = 4
             end
@@ -92,22 +90,14 @@ end
 """
 Generate a batch of jobs to run
 """
-function genbatch(roms::Vector{String}, saves::Vector{String}, duration::Int, counter::Int; copies::Int=1)::Vector{Job}
+function genbatch(roms::Vector{String}, duration::Int, counter::Int; copies::Int=1)::Vector{Job}
     # TODO: Make this more functional instead of manually pushing to a vector
     jobs = []
     for _ in 1:copies
         for r in roms
-            for s in saves[2:10]
-                gb = Emulator(r)
-                sav = Vector{UInt8}(undef, 2^15)
-                open(s) do io
-                    readbytes!(io, sav)
-                end
-                ram!(gb, sav)
-
-                push!(jobs, Job(r, s, duration, gb, "$counter"))
-                counter += 1
-            end
+            gb = Emulator(r)
+            push!(jobs, Job(r, duration, gb, "$counter"))
+            counter += 1
         end
     end
     jobs
@@ -119,13 +109,7 @@ Create a Navmesh by playing the game.
 Starting with a list of roms and save states, spawn a worker for each pair and merge the resulting navmeshes.
 """
 function explore()::Navmesh
-#    roms = ["POKEMON BLUE.gb", "POKEMON RED.gb"] .|> r -> joinpath(@__DIR__, "..", "roms", r)
     roms = ["BLUEMONS.gb"] .|> r -> joinpath(@__DIR__, "..", "roms", r)
-
-    saves = walkdir(joinpath(@__DIR__, "..", "saves")) .|>
-            (listing -> map(f -> joinpath(first(listing), f), last(listing))) |>
-            Base.Fix1(reduce, vcat) |>
-            Base.Fix1(filter, f -> !contains(f, "DS_Store"))
 
     duration = 10*60*60
 
@@ -139,14 +123,14 @@ function explore()::Navmesh
     update!(prog, target)
 
     while length(labels(globe)) < target
-        jobs = genbatch(roms, saves, duration, jobcounter; copies=2)
+        jobs = genbatch(roms, duration, jobcounter; copies=20)
         jobcounter += length(jobs)
         globe0 = @showprogress desc="Batch $batchcounter ($(length(jobs)) jobs)" color=:blue offset=1 @distributed (Navmesh) for j in jobs
             dojob(j)
         end
         globe = Navmesh(globe, globe0)
         batchcounter += 1
-        update!(prog, target - length(labels(globe)))  #?? How to map percent complete towards target into a threshold value?
+        update!(prog, target - length(labels(globe)))
     end
 
     println("")
