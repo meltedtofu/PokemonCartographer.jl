@@ -22,11 +22,15 @@ struct Job
     Job(romname, duration, emulator0, imageprefix) = new(romname, duration, emulator0, imageprefix)
 end
 
-function dojob(job::Job)::Navmesh
+function dojob(job::Job, globe::Navmesh)::Navmesh
     nav = Navmesh()
     statenum = 1
     lastpos = GameState().position
     button = nothing
+    lastpress = 0
+    wasfacingmovementdir = false
+
+    gotohere = randomincomplete(globe)
 
     gb = deepcopy(job.emulator0)
 
@@ -34,18 +38,15 @@ function dojob(job::Job)::Navmesh
         gb.mmu.workram.bytes[0xd732 - 0xc000] |= 0x02 # Enable Debug Mode
         gb.mmu.workram.bytes[0xd747 - 0xc000] |= 0x01 # Followed Oak in to lab
         gb.mmu.workram.bytes[0xd74b - 0xc000] |= 0xff # Complete most of the intro (following oak, pokedex, ...)
+        facingdir = asdirection(gb.mmu.workram.bytes[0xc109 - 0xc000])
         pixels = doframe!(gb)
         game = GameState(gb, pixels)
+
         buttonstate!(gb, ButtonA,     true)
         buttonstate!(gb, ButtonUp,    true)
         buttonstate!(gb, ButtonDown,  true)
         buttonstate!(gb, ButtonLeft,  true)
         buttonstate!(gb, ButtonRight, true)
-
-        if !isnothing(job.imageprefix) && i%300 == 0
-            pixels = doframe!(gb)
-            save(File{format"PNG"}(joinpath("screens", "$(job.imageprefix).$i.png")), reinterpret(BGRA{N0f8}, pixels))
-        end
 
         if statenum == 1 # Haven't loaded the game yet keep smashing Select to open the Fight/Debug menu
             if isnothing(game.menu)
@@ -61,27 +62,55 @@ function dojob(job::Job)::Navmesh
             elseif ("DEBUG", 1) in game.menu
                 buttonstate!(gb, ButtonA, i%2 == 0)
             end
-        elseif statenum == 3 # Unclear why this delay is needed. Just going with it for now. Think it might be about clearing all of the nickname menus.
+        elseif statenum == 3 # Get through all of the dialog. Crude approximation to avoid deeper coupling into the emulator.
             if i < 1*60*60
                 buttonstate!(gb, ButtonB, i%2 == 0)
             else
                 statenum = 4
             end
-        elseif statenum == 4
+        elseif statenum == 4 # Go to target
+            if isnothing(gotohere) || Position(game.position) == gotohere
+                statenum = 5
+            else
+                r = route(globe, Position(game.position), gotohere)
+                if length(r) == 0
+                    statenum = 5
+                elseif i > lastpress + 64
+                    lastpress = i
+                    buttonstate!(gb,
+                                 r |> first |> asbutton,
+                                 false)
+                end
+            end
+        elseif statenum == 5 # Random bouncing around
             buttonstate!(gb, ButtonB, false)
-            if i%3 == 0
+            if i > lastpress + 64
+                if !isnothing(button)
+                    if wasfacingmovementdir # Tried to move (instead of turning). Update navmesh.
+                        if lastpos == game.position # boink!
+                            if lastpos != (0x00, 0x00, 0x00)
+                                Navmesh!(nav, Position(lastpos), nowhere, asdirection(button))
+                            end
+                        else
+                            if lastpos != (0x00, 0x00, 0x00)
+                                Navmesh!(nav, Position(lastpos), Position(game.position), asdirection(button))
+                            end
+                            lastpos = game.position
+                        end
+                    end
+                end
+
                 button = rand([ButtonUp, ButtonDown, ButtonLeft, ButtonRight])
                 buttonstate!(gb, button, false)
-            elseif lastpos != game.position &&!isnothing(button)
-                Navmesh!(nav, Position(lastpos), Position(game.position), asdirection(button))
-                lastpos = game.position
+                wasfacingmovementdir = asbutton(facingdir) == button
+                lastpress = i
             end
         end
     end
 
     if !isnothing(job.imageprefix)
         pixels = doframe!(gb)
-        save(File{format"PNG"}(joinpath("screens", "$(job.imageprefix).end.png")), reinterpret(BGRA{N0f8}, pixels))
+        Images.save(File{format"PNG"}(joinpath("screens", "$(job.imageprefix).end.png")), reinterpret(BGRA{N0f8}, pixels))
     end
 
     nav
@@ -111,26 +140,27 @@ Starting with a list of roms and save states, spawn a worker for each pair and m
 function explore()::Navmesh
     roms = ["BLUEMONS.gb"] .|> r -> joinpath(@__DIR__, "..", "roms", r)
 
-    duration = 10*60*60
+    duration = 5*60*60
 
     jobcounter = 1
     batchcounter = 1
     globe = Navmesh()
 
-    target = 2000
+    target = 1000
 
     prog = ProgressThresh(0.1; desc="Exploring...", color=:blue)
     update!(prog, target)
 
     while length(labels(globe)) < target
-        jobs = genbatch(roms, duration, jobcounter; copies=20)
+        jobs = genbatch(roms, duration, jobcounter; copies=60)
         jobcounter += length(jobs)
-        globe0 = @showprogress desc="Batch $batchcounter ($(length(jobs)) jobs)" color=:blue offset=1 @distributed (Navmesh) for j in jobs
-            dojob(j)
+        globe0 = @showprogress desc="Batch $batchcounter ($(length(jobs)) jobs)" color=:blue offset=batchcounter @distributed (Navmesh) for j in jobs
+            dojob(j, deepcopy(globe))
         end
+
         globe = Navmesh(globe, globe0)
-        batchcounter += 1
         update!(prog, target - length(labels(globe)))
+        batchcounter += 1
     end
 
     println("")
@@ -156,7 +186,6 @@ function checkkeylocations(globe::Navmesh)
     found = (locs .|> l -> (first(l), last(l) in labels(globe)))
 
     # Are the important locations connected?
-    # Do I just build a matrix and check every pair?
     connectivity = (Iterators.product(locs, locs) .|> p -> connected(globe, last(first(p)), last(last(p))) > 0)
 
     @info "Found $found"

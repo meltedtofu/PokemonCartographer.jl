@@ -13,6 +13,8 @@ struct Position
     Position(p) = new(p...)
 end
 
+const nowhere = Position(0xff, 0xff, 0xff)
+
 @enum Direction Up Right Down Left
 
 function asbutton(d::Direction)::Button
@@ -38,6 +40,22 @@ function asdirection(b::Button)::Direction
         Left
     end
 end
+
+function asdirection(facing::UInt8)::Direction
+    if facing == 0x00
+        Down
+    elseif facing == 0x04
+        Up
+    elseif facing == 0x08
+        Left
+    elseif facing == 0x0c
+        Right
+    else
+        Down
+    end
+end
+
+asbutton(facing::UInt8) = facing |> asdirection |> asbutton
 
 export Up, Right, Down, Left, asbutton, asdirection
 
@@ -96,6 +114,25 @@ connected(n::Navmesh, from::Position, to::Position)::Bool = from == to || route(
 # TODO: Render Navmesh as Matrix
 # TODO: Render Navmesh as Ascii
 
-export Navmesh, Direction, Position, route, connected, Navmesh!
+"""
+Select a random, incomplete vertex in the navmesh.
+Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
+"""
+function randomincomplete(n::Navmesh)::Union{Position, Nothing}
+    try
+        threshold = min(3, n |> Graphs.outdegree |> minimum)
+        (n |>
+            Graphs.outdegree |>
+            Base.Fix1(findall, deg -> deg <= threshold) .|>
+            i-> label_for(n, i)) |>
+        collect |>
+        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p != Position(0xff, 0xff, 0xff)) |>
+        rand
+    catch
+        nothing
+    end
+end
+
+export Navmesh, Direction, Position, route, connected, Navmesh!, nowhere, randomincomplete
 
 end # module Nav

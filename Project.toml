@@ -1,7 +1,7 @@
 name = "PokemonCartographer"
 uuid = "a1f5f57e-fd11-4ac4-93c7-988ef3f0997f"
 authors = ["Melted Tofu <melted@meltedtofu.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
