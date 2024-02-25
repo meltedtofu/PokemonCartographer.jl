@@ -266,9 +266,9 @@ version = "0.8.4"
 
 [[deps.GameBoy]]
 deps = ["OffsetArrays"]
-git-tree-sha1 = "68eb3db2ae7f2837ef2c7d6e87f739c358f1bc37"
+git-tree-sha1 = "83b2714d7b4be07a533b041fa7b9a65577841323"
 uuid = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
-version = "0.9.3"
+version = "0.9.4"
 
 [[deps.Graphics]]
 deps = ["Colors", "LinearAlgebra", "NaNMath"]
