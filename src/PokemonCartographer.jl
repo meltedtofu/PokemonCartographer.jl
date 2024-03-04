@@ -19,8 +19,9 @@ struct Job
     duration::Int
     emulator0::Emulator
     imageprefix::Union{String,Nothing}
+    globe::Navmesh
 
-    Job(romname, duration, emulator0, imageprefix) = new(romname, duration, emulator0, imageprefix)
+    Job(romname, duration, emulator0, imageprefix, globe) = new(romname, duration, emulator0, imageprefix, globe)
 end
 
 struct Placement
@@ -46,7 +47,7 @@ struct JobResults
     JobResults(a::JobResults, b::JobResults)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, b.journeys))
 end
 
-function dojob(job::Job, globe::Navmesh)::JobResult
+function dojob(job::Job)::JobResult
     nav = Navmesh()
     statenum = 1
     lastpos = GameState().position
@@ -54,7 +55,7 @@ function dojob(job::Job, globe::Navmesh)::JobResult
     lastpress = 0
     wasfacingmovementdir = false
 
-    gotohere = randomincomplete(globe)
+    gotohere = randomincomplete(job.globe)
     journey = Journey()
 
     gb = deepcopy(job.emulator0)
@@ -102,7 +103,7 @@ function dojob(job::Job, globe::Navmesh)::JobResult
             if isnothing(gotohere) || Position(game.position) == gotohere
                 statenum = 5
             else
-                r = route(globe, Position(game.position), gotohere)
+                r = route(job.globe, Position(game.position), gotohere)
                 if length(r) == 0
                     statenum = 5
                 elseif i > lastpress + 64
@@ -146,25 +147,28 @@ function dojob(job::Job, globe::Navmesh)::JobResult
     JobResult(nav, journey)
 end
 
+function dojobs(jobs, results)::Nothing
+    while true
+        job = take!(jobs)
+        put!(results, dojob(job))
+    end
+end
+
 """
 Generate a batch of jobs to run
 """
-function genbatch(roms::Vector{String}, duration::Int, counter::Int; copies::Int=1)::Vector{Job}
+function genbatch(roms::Vector{String}, duration::Int, counter::Int, globe::Navmesh; copies::Int=1)::Vector{Job}
     # TODO: Make this more functional instead of manually pushing to a vector
     jobs = []
     for _ in 1:copies
         for r in roms
             gb = Emulator(r)
-            push!(jobs, Job(r, duration, gb, "$counter"))
+            push!(jobs, Job(r, duration, gb, nothing, deepcopy(globe)))
             counter += 1
         end
     end
     jobs
 end
-
-#TODO: NEXT: Render each batch as a separate animated video
-# - For the first round: just set the target to 2 and deal with the return value of explore
-# - For second round: make a channel and shove jrs each batch.
 
 """
 Create a Navmesh by playing the game.
@@ -177,7 +181,7 @@ function explore()
     rm(animdir, force=true, recursive=true)
     mkdir(animdir)
 
-    duration = 5 * 60 * 60
+    duration = 8 * 60 * 60
 
     jobcounter = 1
     batchcounter = 1
@@ -185,16 +189,29 @@ function explore()
     journeys = Vector{Vector{Journey}}()
     renderingbb = BoundingBox(7200, 7200, 0, 0)
 
-    target = 250
+    target = 500
 
     prog = ProgressThresh(0.1; desc="Exploring...", color=:blue)
     update!(prog, target)
 
+    jobqueue = RemoteChannel(() -> Channel{Job}(50))
+    resultqueue = RemoteChannel(() -> Channel{JobResult}(50))
+    submit_job(j) = put!(jobqueue, j)
+
+    foreach(pid -> remote_do(dojobs, pid, jobqueue, resultqueue), workers())
+
     while length(labels(globe)) < target
-        jobs = genbatch(roms, duration, jobcounter; copies=60)
+        jobs = genbatch(roms, duration, jobcounter, globe; copies=100)
+        bprog = Progress(length(jobs), "Batch $batchcounter ($(length(jobs)) jobs"; color = :blue, offset=batchcounter+1)
+        
+        @async foreach(submit_job, jobs)
         jobcounter += length(jobs)
-        jrs = @showprogress desc = "Batch $batchcounter ($(length(jobs)) jobs)" color = :blue offset = batchcounter @distributed (JobResults) for j in jobs
-            dojob(j, deepcopy(globe))
+
+        jrs = JobResults()
+
+        for i in 1:length(jobs)
+            jrs = JobResults(jrs, take!(resultqueue))
+            next!(bprog)
         end
 
         renderingbb = render(jrs.journeys, batchcounter, animdir, renderingbb)
@@ -765,7 +782,7 @@ function render(js::Vector{Journey}, batchnum::Int, basedir::String, bb::Boundin
     outdir = joinpath(basedir, "batch.$(lpad(batchnum, 3, '0'))")
     mkdir(outdir)
 
-    @showprogress desc = "Rendering Frames" color = :blue for i in 1:200:maximum(length, js)
+    @showprogress desc = "Rendering Frames" color=:blue  offset=1 for i in 1:200:maximum(length, js)
         for j in js
             i > length(j) && continue
             p = position_to_pixels(j[i].position)
@@ -784,11 +801,11 @@ function render(js::Vector{Journey}, batchnum::Int, basedir::String, bb::Boundin
             if j[i].orientation == Right
                 orientation = 0
             elseif j[i].orientation == Down
-                orientation = 3pi/2
+                orientation = pi/2
             elseif j[i].orientation == Left
                 orientation = 2pi
             elseif j[i].orientation == Up
-                orientation = pi/2
+                orientation = 3pi/2
             end
 
             ngon(position_to_pixels(j[i].position) + relativeorigin, 8, 3, orientation)
@@ -796,7 +813,6 @@ function render(js::Vector{Journey}, batchnum::Int, basedir::String, bb::Boundin
         end
         finish()
     end
-
 
     bb
 end
