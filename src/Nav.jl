@@ -94,6 +94,18 @@ function Navmesh(a::Navmesh, b::Navmesh)::Navmesh
     n
 end
 
+function Navmesh!(a0::Navmesh, a::Navmesh)::Nothing
+    for l in labels(a)
+        a0[l] = nothing
+    end
+
+    for el in edge_labels(a)
+        a0[el...] = a[el...]
+    end
+
+    nothing
+end
+
 function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     try
         Graphs.a_star(n,
