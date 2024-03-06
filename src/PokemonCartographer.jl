@@ -7,7 +7,7 @@ using FileIO
 using Images
 using ProgressMeter
 using Random
-using MetaGraphsNext: labels
+using MetaGraphsNext: labels, code_for, outdegree
 using Distributed
 using Luxor
 
@@ -214,11 +214,12 @@ function explore()
             next!(bprog)
         end
 
-        renderingbb = render(jrs.journeys, batchcounter, animdir, renderingbb)
-
         globe = Navmesh(globe, jrs.nav)
         push!(journeys, jrs.journeys)
+        renderingbb = render(jrs.journeys, globe, batchcounter, animdir, renderingbb)
+
         update!(prog, target - length(labels(globe)))
+
         batchcounter += 1
     end
 
@@ -775,7 +776,7 @@ expand(bb::BoundingBox, p::Point, padding::Int=8)::BoundingBox = BoundingBox(min
 width(bb::BoundingBox) = bb.right - bb.left
 height(bb::BoundingBox) = bb.bottom - bb.top
 
-function render(js::Vector{Journey}, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0))::BoundingBox
+function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0))::BoundingBox
     # map source: https://blog.vjeux.com/2023/project/pokemon-red-blue-map.html
 
     bg = readpng(joinpath(@__DIR__, "..", "map.png"))
@@ -813,6 +814,40 @@ function render(js::Vector{Journey}, batchnum::Int, basedir::String, bb::Boundin
         end
         finish()
     end
+
+    # Render Heatmap
+    relativeorigin = Point(-bb.left, -bb.top)
+    Drawing(width(bb), height(bb), joinpath(outdir, "heatmap.png"))
+    background("white")
+    placeimage(bg, relativeorigin)
+
+    for l in labels(globe)
+        o = outdegree(globe, code_for(globe, l))
+        if o == 0
+            setcolor("white")
+        elseif o == 1
+            setcolor("red")
+        elseif o == 2
+            setcolor("orange")
+        elseif o == 3
+            setcolor("yellow")
+        elseif o == 4
+            setcolor("green")
+        elseif o == 5
+            setcolor("blue")
+        elseif o == 6
+            setcolor("purple")
+        else
+            setcolor("black")
+        end
+
+        try
+            ngon(position_to_pixels(l) + relativeorigin, 8, 8)
+            do_action(:fill)
+        catch
+        end
+    end
+    finish()
 
     bb
 end
