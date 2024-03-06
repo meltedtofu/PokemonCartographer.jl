@@ -175,21 +175,18 @@ Create a Navmesh by playing the game.
 
 Starting with a list of roms and save states, spawn a worker for each pair and merge the resulting navmeshes.
 """
-function explore()
+function explore(;duration_min=15, copies=100, target=500)
     roms = ["BLUEMONS.gb"] .|> r -> joinpath(@__DIR__, "..", "roms", r)
     animdir = joinpath(@__DIR__, "..", "anim")
     rm(animdir, force=true, recursive=true)
     mkdir(animdir)
-
-    duration = 8 * 60 * 60
 
     jobcounter = 1
     batchcounter = 1
     globe = Navmesh()
     journeys = Vector{Vector{Journey}}()
     renderingbb = BoundingBox(7200, 7200, 0, 0)
-
-    target = 500
+    duration = duration_min*60*60
 
     prog = ProgressThresh(0.1; desc="Exploring...", color=:blue)
     update!(prog, target)
@@ -201,8 +198,8 @@ function explore()
     foreach(pid -> remote_do(dojobs, pid, jobqueue, resultqueue), workers())
 
     while length(labels(globe)) < target
-        jobs = genbatch(roms, duration, jobcounter, globe; copies=100)
-        bprog = Progress(length(jobs), "Batch $batchcounter ($(length(jobs)) jobs"; color = :blue, offset=batchcounter+1)
+        jobs = genbatch(roms, duration, jobcounter, globe; copies=copies)
+        bprog = Progress(length(jobs), "Batch $batchcounter ($(length(jobs))) jobs"; color = :blue, offset=batchcounter+1)
         
         @async foreach(submit_job, jobs)
         jobcounter += length(jobs)
