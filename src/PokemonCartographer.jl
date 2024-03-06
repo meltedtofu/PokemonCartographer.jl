@@ -48,14 +48,14 @@ struct JobResults
 end
 
 function dojob(job::Job)::JobResult
-    nav = Navmesh()
+    nav = job.globe
     statenum = 1
     lastpos = GameState().position
     button = nothing
     lastpress = 0
     wasfacingmovementdir = false
 
-    gotohere = randomincomplete(job.globe)
+    gotohere = randomincomplete(nav)
     journey = Journey()
 
     gb = deepcopy(job.emulator0)
@@ -103,7 +103,7 @@ function dojob(job::Job)::JobResult
             if isnothing(gotohere) || Position(game.position) == gotohere
                 statenum = 5
             else
-                r = route(job.globe, Position(game.position), gotohere)
+                r = route(nav, Position(game.position), gotohere)
                 if length(r) == 0
                     statenum = 5
                 elseif i > lastpress + 64
@@ -120,14 +120,24 @@ function dojob(job::Job)::JobResult
                     if wasfacingmovementdir # Tried to move (instead of turning). Update navmesh.
                         if lastpos == game.position # boink!
                             if lastpos != (0x00, 0x00, 0x00)
+                                nowhere = nowhereup
+                                if button == ButtonUp    
+                                    nowhere = nowhereup
+                                elseif button == ButtonDown
+                                    nowhere = nowheredown
+                                elseif button == ButtonLeft
+                                    nowhere = nowhereleft
+                                elseif button == ButtonRight
+                                    nowhere = nowhereright
+                                end
                                 Navmesh!(nav, Position(lastpos), nowhere, asdirection(button))
                             end
                         else
                             if lastpos != (0x00, 0x00, 0x00)
                                 Navmesh!(nav, Position(lastpos), Position(game.position), asdirection(button))
                             end
-                            lastpos = game.position
                         end
+                        lastpos = game.position
                     end
                 end
 
@@ -135,6 +145,12 @@ function dojob(job::Job)::JobResult
                 buttonstate!(gb, button, false)
                 wasfacingmovementdir = asbutton(facingdir) == button
                 lastpress = i
+            end
+
+            if i % 5_000 == 0
+                gotohere = randomincomplete(nav) 
+                lastpress = i
+                statenum = 4
             end
         end
     end

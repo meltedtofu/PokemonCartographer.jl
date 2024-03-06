@@ -13,7 +13,10 @@ struct Position
     Position(p) = new(p...)
 end
 
-const nowhere = Position(0xff, 0xff, 0xff)
+const nowhereup = Position(0xff, 0xff, 0xff)
+const nowheredown = Position(0xff, 0xff, 0xfe)
+const nowhereleft = Position(0xff, 0xff, 0xfd)
+const nowhereright = Position(0xff, 0xff, 0xfc)
 
 @enum Direction Up Right Down Left
 
@@ -132,19 +135,19 @@ Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
 """
 function randomincomplete(n::Navmesh)::Union{Position, Nothing}
     try
-        threshold = min(3, n |> Graphs.outdegree |> minimum)
+        threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 1, 3)) |> minimum
         (n |>
             Graphs.outdegree |>
             Base.Fix1(findall, deg -> deg <= threshold) .|>
             i-> label_for(n, i)) |>
         collect |>
-        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p != Position(0xff, 0xff, 0xff)) |>
+        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p.location != 0xff) |>
         rand
-    catch
+    catch e
         nothing
     end
 end
 
-export Navmesh, Direction, Position, route, connected, Navmesh!, nowhere, randomincomplete
+export Navmesh, Direction, Position, route, connected, Navmesh!, nowhereup, nowheredown, nowhereleft, nowhereright, randomincomplete
 
 end # module Nav
