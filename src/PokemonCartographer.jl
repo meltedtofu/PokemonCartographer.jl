@@ -7,7 +7,7 @@ using FileIO
 using Images
 using ProgressMeter
 using Random
-using MetaGraphsNext: labels, code_for, outdegree
+using MetaGraphsNext: labels, code_for, outdegree, outneighbor_labels, has_edge, rem_edge!, has_vertex, rem_edge!
 using Distributed
 using Luxor
 
@@ -47,24 +47,173 @@ struct JobResults
     JobResults(a::JobResults, b::JobResults)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, b.journeys))
 end
 
+@enum State FirstBoot OpenFightDebug NewGame DialogSkip GoToTarget RandomWander
+
+mutable struct JobState
+    state::State
+    nav::Navmesh
+    lastpos::Tuple{UInt8, UInt8, UInt8}
+    button::Union{Nothing, Button}
+    lastpress::Int
+    wasfacingmovementdir::Bool
+    facingdir::Direction
+    boinktimer::Int
+    randomstepsremaining::Int
+    gotohere::Union{Nothing, Position}
+
+    JobState(globe::Navmesh) = new(FirstBoot,
+                                   globe,
+                                   GameState().position,
+                                   nothing,
+                                   0,
+                                   false,
+                                   Down,
+                                   0,
+                                   25,
+                                   randomincomplete(globe)
+                                  )
+end
+
+function open_fight_debug!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
+    if isnothing(game.menu)
+        buttonstate!(gb, ButtonSelect, i % 2 == 0)
+        js.state
+    else
+        NewGame
+    end
+end
+
+function new_game!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
+    if isnothing(game.menu)
+        DialogSkip
+    elseif ("FIGHT", 1) in game.menu
+        buttonstate!(gb, ButtonDown, i % 2 == 0)
+        js.state
+    elseif ("DEBUG", 1) in game.menu
+        buttonstate!(gb, ButtonA, i % 2 == 0)
+        js.state
+    end
+end
+
+function dialog_skip!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
+    # Get through all of the dialog. Crude approximation to avoid deeper coupling into the emulator.
+
+    if i < 1 * 60 * 60
+        buttonstate!(gb, ButtonB, i % 2 == 0)
+        js.state
+    else
+        GoToTarget
+    end
+end
+
+function go_to_target!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
+    buttonstate!(gb, ButtonB, false)
+    if isnothing(js.gotohere) || Position(game.position) == js.gotohere
+        RandomWander
+    else
+        r = route(js.nav, Position(game.position), js.gotohere)
+        if length(r) == 0
+            s.statenum = 5
+        elseif i > js.lastpress + 16
+            js.lastpress = i
+            buttonstate!(gb,
+                r |> first |> asbutton,
+                false)
+        end
+        js.state
+    end
+end
+
+function random_wander!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
+    buttonstate!(gb, ButtonB, false)
+    
+    if isnothing(js.button)
+        js.button = rand([ButtonUp, ButtonLeft, ButtonDown, ButtonRight])
+        js.wasfacingmovementdir = asbutton(js.facingdir) == js.button
+        buttonstate!(gb, js.button, false)
+        js.lastpress = i
+        return js.state
+    end
+
+    if !js.wasfacingmovementdir
+        if i > js.lastpress + 10
+            buttonstate!(gb, js.button, false)
+            js.wasfacingmovementdir = true
+            js.lastpress = i
+        end
+        return js.state
+    end
+
+    if js.lastpos == game.position # boink!
+        js.boinktimer += 1
+        if js.boinktimer < 1000
+            return js.state
+        else
+            js.boinktimer = 0
+            if js.lastpos != (0x00, 0x00, 0x00)
+                nowhere = asnowhere(js.button)
+
+                # Only add if lastpos -> "somewhere" with button doesn't exist
+                if !goessomewhere(js.nav, Position(js.lastpos), js.button)
+                    Navmesh!(js.nav, Position(js.lastpos), nowhere, asdirection(js.button))
+                # else
+                #     @warn "Trying to add edge to nowhere when an edge already exists $lastpos -> $button -> $nowhere"
+                end
+            end
+        end
+    else # moved to new spot!
+        js.boinktimer = 0
+        if js.lastpos != (0x00, 0x00, 0x00)
+            # if lastpos[2] != game.position[2] && lastpos[3] != lastpos[3]
+            #     @info "diagonal $(lastpos) -> $button -> $(game.position)"
+            # end
+
+            # if !(-2 < Int(lastpos[2]) - Int(game.position[2]) < 2) || !(-2 < Int(lastpos[3]) - Int(game.position[3]) < 2)
+            #     @info "skip $(lastpos) -> $button -> $(game.position)"
+            # end
+            
+            if goesnowhere(js.nav, Position(js.lastpos), js.button)
+                # @info "Removing edge to nowhere: $(lastpos), $(asnowhere(button))"
+                rem_edge!(js.nav, Position(js.lastpos), asnowhere(js.button))
+            end
+
+            Navmesh!(js.nav, Position(js.lastpos), Position(game.position), asdirection(js.button))
+        end
+    end
+
+    js.lastpos = game.position
+    js.randomstepsremaining -= 1
+
+    if js.randomstepsremaining <= 0
+        js.gotohere = randomincomplete(js.nav)
+        js.randomstepsremaining = 25
+        js.button = nothing
+        js.wasfacingmovementdir = false
+        return GoToTarget
+    end
+
+    if i > js.lastpress + 10
+        js.button = rand([ButtonUp, ButtonLeft, ButtonDown, ButtonRight])
+        buttonstate!(gb, js.button, false)
+        js.wasfacingmovementdir = asbutton(js.facingdir) == js.button
+        js.lastpress = i
+    end
+
+    js.state
+end
+
 function dojob(job::Job)::JobResult
     nav = job.globe
-    statenum = 1
-    lastpos = GameState().position
-    button = nothing
-    lastpress = 0
-    wasfacingmovementdir = false
-
-    gotohere = randomincomplete(nav)
     journey = Journey()
 
+    s = JobState(nav)
     gb = deepcopy(job.emulator0)
 
     for i in 1:job.duration
         gb.mmu.workram.bytes[0xd732-0xc000] |= 0x02 # Enable Debug Mode
         gb.mmu.workram.bytes[0xd747-0xc000] |= 0x01 # Followed Oak in to lab
         gb.mmu.workram.bytes[0xd74b-0xc000] |= 0xff # Complete most of the intro (following oak, pokedex, ...)
-        facingdir = asdirection(gb.mmu.workram.bytes[0xc109-0xc000])
+        s.facingdir = asdirection(gb.mmu.workram.bytes[0xc109-0xc000])
 
         pixels = doframe!(gb)
         game = GameState(gb, pixels)
@@ -75,83 +224,22 @@ function dojob(job::Job)::JobResult
         buttonstate!(gb, ButtonLeft, true)
         buttonstate!(gb, ButtonRight, true)
 
-        if statenum >= 4
-            push!(journey, Placement(Position(game.position), facingdir))
+        if s.state == GoToTarget || s.state == RandomWander
+            push!(journey, Placement(Position(game.position), s.facingdir))
         end
 
-        if statenum == 1 # Haven't loaded the game yet keep smashing Select to open the Fight/Debug menu
-            if isnothing(game.menu)
-                buttonstate!(gb, ButtonSelect, i % 2 == 0)
-            else
-                statenum = 2
-            end
-        elseif statenum == 2 ## Select new game
-            if isnothing(game.menu)
-                statenum = 3
-            elseif ("FIGHT", 1) in game.menu
-                buttonstate!(gb, ButtonDown, i % 2 == 0)
-            elseif ("DEBUG", 1) in game.menu
-                buttonstate!(gb, ButtonA, i % 2 == 0)
-            end
-        elseif statenum == 3 # Get through all of the dialog. Crude approximation to avoid deeper coupling into the emulator.
-            if i < 1 * 60 * 60
-                buttonstate!(gb, ButtonB, i % 2 == 0)
-            else
-                statenum = 4
-            end
-        elseif statenum == 4 # Go to target
-            if isnothing(gotohere) || Position(game.position) == gotohere
-                statenum = 5
-            else
-                r = route(nav, Position(game.position), gotohere)
-                if length(r) == 0
-                    statenum = 5
-                elseif i > lastpress + 64
-                    lastpress = i
-                    buttonstate!(gb,
-                        r |> first |> asbutton,
-                        false)
-                end
-            end
-        elseif statenum == 5 # Random bouncing around
-            buttonstate!(gb, ButtonB, false)
-            if i > lastpress + 64
-                if !isnothing(button)
-                    if wasfacingmovementdir # Tried to move (instead of turning). Update navmesh.
-                        if lastpos == game.position # boink!
-                            if lastpos != (0x00, 0x00, 0x00)
-                                nowhere = nowhereup
-                                if button == ButtonUp    
-                                    nowhere = nowhereup
-                                elseif button == ButtonDown
-                                    nowhere = nowheredown
-                                elseif button == ButtonLeft
-                                    nowhere = nowhereleft
-                                elseif button == ButtonRight
-                                    nowhere = nowhereright
-                                end
-                                Navmesh!(nav, Position(lastpos), nowhere, asdirection(button))
-                            end
-                        else
-                            if lastpos != (0x00, 0x00, 0x00)
-                                Navmesh!(nav, Position(lastpos), Position(game.position), asdirection(button))
-                            end
-                        end
-                        lastpos = game.position
-                    end
-                end
-
-                button = rand([ButtonUp, ButtonDown, ButtonLeft, ButtonRight])
-                buttonstate!(gb, button, false)
-                wasfacingmovementdir = asbutton(facingdir) == button
-                lastpress = i
-            end
-
-            if i % 5_000 == 0
-                gotohere = randomincomplete(nav) 
-                lastpress = i
-                statenum = 4
-            end
+        if s.state == FirstBoot
+            s.state = OpenFightDebug
+        elseif s.state == OpenFightDebug
+            s.state = open_fight_debug!(s, gb, game, i)
+        elseif s.state == NewGame
+            s.state = new_game!(s, gb, game, i)
+        elseif s.state == DialogSkip
+            s.state = dialog_skip!(s, gb, game, i)
+        elseif s.state == GoToTarget
+            s.state = go_to_target!(s, gb, game, i)
+        elseif s.state == RandomWander
+            s.state = random_wander!(s, gb, game, i)
         end
     end
 
@@ -794,9 +882,11 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
 
     bg = readpng(joinpath(@__DIR__, "..", "map.png"))
     outdir = joinpath(basedir, "batch.$(lpad(batchnum, 3, '0'))")
-    mkdir(outdir)
+    mkpath(outdir)
 
-    @showprogress desc = "Rendering Frames" color=:blue  offset=1 for i in 1:200:maximum(length, js)
+    #gap = 200
+    gap = 1
+    @showprogress desc = "Rendering Frames" color=:blue  offset=1 for i in 1:gap:maximum(length, js)
         for j in js
             i > length(j) && continue
             p = position_to_pixels(j[i].position)
@@ -829,8 +919,10 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
     end
 
     # Render Heatmap
+    heatmapdir = joinpath(basedir, "heatmap")
+    mkpath(heatmapdir)
     relativeorigin = Point(-bb.left, -bb.top)
-    Drawing(width(bb), height(bb), joinpath(outdir, "heatmap.png"))
+    Drawing(width(bb), height(bb), joinpath(heatmapdir, "heatmap.$(lpad(batchnum,3,'0')).png"))
     background("white")
     placeimage(bg, relativeorigin)
 
@@ -853,6 +945,10 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
         else
             setcolor("black")
         end
+
+        # if o > 4
+        #     @info "$l $(outneighbor_labels(globe, l) |> collect)"
+        # end
 
         try
             ngon(position_to_pixels(l) + relativeorigin, 8, 8)

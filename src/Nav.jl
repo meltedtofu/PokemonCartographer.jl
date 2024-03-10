@@ -54,13 +54,27 @@ function asdirection(facing::UInt8)::Direction
     elseif facing == 0x0c
         Right
     else
-        Down
+        throw("unknown direction $facing")
     end
 end
 
+function asnowhere(b::Button)::Position
+    if b == ButtonUp    
+        nowhereup
+    elseif b == ButtonDown
+        nowheredown
+    elseif b == ButtonLeft
+        nowhereleft
+    elseif b == ButtonRight
+        nowhereright
+    end
+end
+
+asnowhere(d::Direction)::Position = asnowhere(asbutton(d))
+
 asbutton(facing::UInt8) = facing |> asdirection |> asbutton
 
-export Up, Right, Down, Left, asbutton, asdirection
+export Up, Right, Down, Left, asbutton, asdirection, asnowhere
 
 # Using type parameters to elide the unimportant implementation details of MetaGraphNext.
 # Vertex representation in DiGraph (aka "Code"), Weight Function, Weight.
@@ -94,6 +108,8 @@ function Navmesh(a::Navmesh, b::Navmesh)::Navmesh
         end
     end
 
+    only_one_location_per_direction!(n)
+
     n
 end
 
@@ -106,8 +122,53 @@ function Navmesh!(a0::Navmesh, a::Navmesh)::Nothing
         a0[el...] = a[el...]
     end
 
+    only_one_location_per_direction!(a0)
+
     nothing
 end
+
+function only_one_location_per_direction!(n::Navmesh)::Nothing
+    for l in labels(n)
+        outls = outneighbor_labels(n, l) |> collect
+        up = 0
+        down = 0
+        left = 0
+        right = 0
+
+        for outl ∈ outls
+            d = n[l, outl]
+            if d == Up
+                up += 1
+            elseif d == Down
+                down += 1
+            elseif d == Left
+                left += 1
+            elseif d == Right
+                right += 1
+            end
+        end
+
+        if up > 1
+            rem_edge!(n, l, nowhereup)
+        end
+
+        if down > 1
+            rem_edge!(n, l, nowheredown)
+        end
+
+        if left > 1
+            rem_edge!(n, l, nowhereleft)
+        end
+
+        if right > 1
+            rem_edge!(n, l, nowhereright)
+        end
+    end
+
+    nothing
+end
+
+Graphs.rem_edge!(n::Navmesh, from::Position, to::Position) = rem_edge!(n, code_for(n, from), code_for(n, to))
 
 function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     try
@@ -135,19 +196,42 @@ Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
 """
 function randomincomplete(n::Navmesh)::Union{Position, Nothing}
     try
-        threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 1, 3)) |> minimum
+        threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 0, 4)) |> minimum
         (n |>
             Graphs.outdegree |>
             Base.Fix1(findall, deg -> deg <= threshold) .|>
             i-> label_for(n, i)) |>
         collect |>
-        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p.location != 0xff) |>
+        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p.location != 0xff && p.location != 0x28) |>
         rand
     catch e
         nothing
     end
 end
 
-export Navmesh, Direction, Position, route, connected, Navmesh!, nowhereup, nowheredown, nowhereleft, nowhereright, randomincomplete
+exploreddirections(n::Navmesh, p::Position)::Vector{Direction} = unique([n[p, l] for l in outneighbor_labels(n, p)])
+
+function goesnowhere(n::Navmesh, p::Position, d::Direction)::Bool
+    try
+        has_vertex(n, code_for(n, p)) && has_edge(n, code_for(n, p), code_for(n, asnowhere(d)))
+    catch e
+        false
+    end
+end
+
+goesnowhere(n::Navmesh, p::Position, b::Button) = goesnowhere(n, p, asdirection(b))
+
+function goessomewhere(n::Navmesh, p::Position, d::Direction)::Bool
+    try
+        has_vertex(n, code_for(n, p)) && d ∈ exploreddirections(n, p) && !has_edge(n, code_for(n, p), code_for(n, asnowhere(asbutton(d))))
+    catch e
+        false
+    end
+end
+
+goessomewhere(n::Navmesh, p::Position, b::Button) = goessomewhere(n, p, asdirection(b))
+
+
+export Navmesh, Direction, Position, route, connected, Navmesh!, goesnowhere, goessomewhere, randomincomplete, exploreddirections
 
 end # module Nav
