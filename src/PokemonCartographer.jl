@@ -60,6 +60,7 @@ mutable struct JobState
     boinktimer::Int
     randomstepsremaining::Int
     gotohere::Union{Nothing, Position}
+    waiting::Bool
 
     JobState(globe::Navmesh) = new(FirstBoot,
                                    globe,
@@ -70,7 +71,8 @@ mutable struct JobState
                                    Down,
                                    0,
                                    25,
-                                   randomincomplete(globe)
+                                   randomincomplete(globe),
+                                   false,
                                   )
 end
 
@@ -113,7 +115,7 @@ function go_to_target!(js::JobState, gb::Emulator, game::GameState, i::Int)::Sta
     else
         r = route(js.nav, Position(game.position), js.gotohere)
         if length(r) == 0
-            s.statenum = 5
+            return RandomWander
         elseif i > js.lastpress + 16
             js.lastpress = i
             buttonstate!(gb,
@@ -126,30 +128,31 @@ end
 
 function random_wander!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
     buttonstate!(gb, ButtonB, false)
-    
-    if isnothing(js.button)
-        js.button = rand([ButtonUp, ButtonLeft, ButtonDown, ButtonRight])
-        js.wasfacingmovementdir = asbutton(js.facingdir) == js.button
+
+    if js.waiting
+        # Are we done waiting?
         buttonstate!(gb, js.button, false)
-        js.lastpress = i
-        return js.state
-    end
+        if js.lastpos != game.position # We found somewhere new
+            # TODO: Wait for tileset to settle?
+            if js.lastpos != (0x00, 0x00, 0x00)
+                # if lastpos[2] != game.position[2] && lastpos[3] != lastpos[3]
+                #     @info "diagonal $(lastpos) -> $button -> $(game.position)"
+                # end
 
-    if !js.wasfacingmovementdir
-        if i > js.lastpress + 10
-            buttonstate!(gb, js.button, false)
-            js.wasfacingmovementdir = true
-            js.lastpress = i
-        end
-        return js.state
-    end
+                # if !(-2 < Int(lastpos[2]) - Int(game.position[2]) < 2) || !(-2 < Int(lastpos[3]) - Int(game.position[3]) < 2)
+                #     @info "skip $(lastpos) -> $button -> $(game.position)"
+                # end
+                                        
+                if goesnowhere(js.nav, Position(js.lastpos), js.button)
+                    # @info "Removing edge to nowhere: $(lastpos), $(asnowhere(button))"
+                    rem_edge!(js.nav, Position(js.lastpos), asnowhere(js.button))
+                end
 
-    if js.lastpos == game.position # boink!
-        js.boinktimer += 1
-        if js.boinktimer < 1000
-            return js.state
-        else
-            js.boinktimer = 0
+                Navmesh!(js.nav, Position(js.lastpos), Position(game.position), asdirection(js.button))
+            end
+            js.waiting = false
+        elseif i > js.lastpress + 100 # We are not going anywhere -> boink!
+            js.waiting = false
             if js.lastpos != (0x00, 0x00, 0x00)
                 nowhere = asnowhere(js.button)
 
@@ -161,42 +164,14 @@ function random_wander!(js::JobState, gb::Emulator, game::GameState, i::Int)::St
                 end
             end
         end
-    else # moved to new spot!
-        js.boinktimer = 0
-        if js.lastpos != (0x00, 0x00, 0x00)
-            # if lastpos[2] != game.position[2] && lastpos[3] != lastpos[3]
-            #     @info "diagonal $(lastpos) -> $button -> $(game.position)"
-            # end
-
-            # if !(-2 < Int(lastpos[2]) - Int(game.position[2]) < 2) || !(-2 < Int(lastpos[3]) - Int(game.position[3]) < 2)
-            #     @info "skip $(lastpos) -> $button -> $(game.position)"
-            # end
-            
-            if goesnowhere(js.nav, Position(js.lastpos), js.button)
-                # @info "Removing edge to nowhere: $(lastpos), $(asnowhere(button))"
-                rem_edge!(js.nav, Position(js.lastpos), asnowhere(js.button))
-            end
-
-            Navmesh!(js.nav, Position(js.lastpos), Position(game.position), asdirection(js.button))
-        end
-    end
-
-    js.lastpos = game.position
-    js.randomstepsremaining -= 1
-
-    if js.randomstepsremaining <= 0
-        js.gotohere = randomincomplete(js.nav)
-        js.randomstepsremaining = 25
-        js.button = nothing
-        js.wasfacingmovementdir = false
-        return GoToTarget
-    end
-
-    if i > js.lastpress + 10
+    else
+        # Time to press a button
         js.button = rand([ButtonUp, ButtonLeft, ButtonDown, ButtonRight])
-        buttonstate!(gb, js.button, false)
         js.wasfacingmovementdir = asbutton(js.facingdir) == js.button
+        js.waiting = true
         js.lastpress = i
+        js.lastpos = game.position
+        buttonstate!(gb, js.button, false)
     end
 
     js.state
@@ -884,8 +859,8 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
     outdir = joinpath(basedir, "batch.$(lpad(batchnum, 3, '0'))")
     mkpath(outdir)
 
-    #gap = 200
-    gap = 1
+    gap = 200
+    #gap = 1
     @showprogress desc = "Rendering Frames" color=:blue  offset=1 for i in 1:gap:maximum(length, js)
         for j in js
             i > length(j) && continue
