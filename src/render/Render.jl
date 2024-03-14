@@ -106,6 +106,16 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
         catch
         end
     end
+
+    setcolor("black")
+    for l in labels(globe)
+        for o in outneighbor_labels(globe, l)
+            try
+                arrow(position_to_pixels(l) + relativeorigin, position_to_pixels(o) + relativeorigin; arrowheadlength=5)
+            catch
+            end
+        end
+    end
     finish()
 
     bb
