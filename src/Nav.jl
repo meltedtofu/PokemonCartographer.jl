@@ -76,6 +76,14 @@ asbutton(facing::UInt8) = facing |> asdirection |> asbutton
 
 export Up, Right, Down, Left, asbutton, asdirection, asnowhere
 
+
+struct Placement
+    position::Position
+    orientation::Direction
+end
+
+const Journey = Vector{Placement}
+
 # Using type parameters to elide the unimportant implementation details of MetaGraphNext.
 # Vertex representation in DiGraph (aka "Code"), Weight Function, Weight.
 const Navmesh{C, Wf, W} = MetaGraph{C, Graphs.SimpleGraphs.SimpleDiGraph{C}, Position, Nothing, Direction, Nothing, Wf, W}
@@ -232,6 +240,6 @@ end
 goessomewhere(n::Navmesh, p::Position, b::Button) = goessomewhere(n, p, asdirection(b))
 
 
-export Navmesh, Direction, Position, route, connected, Navmesh!, goesnowhere, goessomewhere, randomincomplete, exploreddirections
+export Navmesh, Direction, Position, Journey, Placement, route, connected, Navmesh!, goesnowhere, goessomewhere, randomincomplete, exploreddirections
 
 end # module Nav
