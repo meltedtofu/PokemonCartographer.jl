@@ -89,10 +89,17 @@ const Journey = Vector{Placement}
 const Navmesh{C, Wf, W} = MetaGraph{C, Graphs.SimpleGraphs.SimpleDiGraph{C}, Position, Nothing, Direction, Nothing, Wf, W}
 
 function Navmesh()::Navmesh
-    MetaGraph(DiGraph();
-              vertex_data_type=Nothing,
-              label_type=Position,
-              edge_data_type=Direction)
+    n = MetaGraph(DiGraph();
+                  vertex_data_type=Nothing,
+                  label_type=Position,
+                  edge_data_type=Direction)
+
+    n[nowhereup] = nothing
+    n[nowheredown] = nothing
+    n[nowhereleft] = nothing
+    n[nowhereright] = nothing
+
+    n
 end
 
 function Navmesh!(n::Navmesh, from::Position, to::Position, d::Direction)::Nothing
@@ -202,15 +209,25 @@ connected(n::Navmesh, from::Position, to::Position)::Bool = from == to || route(
 Select a random, incomplete vertex in the navmesh.
 Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
 """
-function randomincomplete(n::Navmesh)::Union{Position, Nothing}
+function randomincomplete(n::Navmesh, nogolist::Vector{Position})::Union{Position, Nothing}
+    # TODO: provide a list of positions to filter as an optional function argument. This way the caller can figure control the search process.
+    threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 0, 4)) |> minimum
+    selected = randomincomplete(n, threshold, nogolist)
+    if isnothing(selected) && threshold < 4
+        randomincomplete(n, threshold + 1, nogolist)
+    else
+        selected
+    end
+end
+
+function randomincomplete(n::Navmesh, threshold::Int, nogolist::Vector{Position}=[Position(0x00, 0x00, 0x00)])::Union{Position, Nothing}
     try
-        threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 0, 4)) |> minimum
         (n |>
             Graphs.outdegree |>
             Base.Fix1(findall, deg -> deg <= threshold) .|>
             i-> label_for(n, i)) |>
         collect |>
-        Base.Fix1(filter, p -> p != Position(0x00, 0x00, 0x00) && p.location != 0xff && p.location != 0x28) |>
+        Base.Fix1(filter, p -> p ∉ nogolist && p.location != 0xff && p.location != 0x28) |>
         rand
     catch e
         nothing

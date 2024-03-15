@@ -21,25 +21,31 @@ struct Job
     emulator0::Emulator
     imageprefix::Union{String,Nothing}
     globe::Navmesh
+    nogolist::Vector{Position}
 
-    Job(romname, duration, emulator0, imageprefix, globe) = new(romname, duration, emulator0, imageprefix, globe)
+    Job(romname, duration, emulator0, imageprefix, globe, nogo) = new(romname, duration, emulator0, imageprefix, globe, nogo)
 end
 
 # TODO: Compute other metrics for optimizing subsequent job generation (new spaces found, number of locations found, "compactness" of route, ...)
 struct JobResult
     nav::Navmesh
     journey::Journey
+    gotoheres::Vector{Position}
 end
 
 struct JobResults
     nav::Navmesh
     journeys::Vector{Journey}
+    nogolist::Vector{Position}
 
-    JobResults() = new(Navmesh(), [])
-    JobResults(a::JobResult, b::JobResult)::JobResults = new(Navmesh(a.nav, b.nav), [a.journey, b.journey])
-    JobResults(a::JobResults, b::JobResult)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, [b.journey]))
-    JobResults(a::JobResults, b::JobResults)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, b.journeys))
+    JobResults() = new(Navmesh(), [], [Position(0x00, 0x00, 0x00)])
+    JobResults(a::JobResult, b::JobResult)::JobResults = new(Navmesh(a.nav, b.nav), [a.journey, b.journey], union(a.gotoheres, b.gotoheres))
+    JobResults(a::JobResults, b::JobResult)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, [b.journey]), union(a.nogolist, b.gotoheres))
+    JobResults(a::JobResults, b::JobResults)::JobResults = new(Navmesh(a.nav, b.nav), vcat(a.journeys, b.journeys), union(a.nogolist, b.nogolist))
 end
+
+# Potentially overly optimistic merging gotoheres and nogolist immediately.
+# Works as long as the batch size is sufficiently large to cover all of the newly discovered navmesh nodes.
 
 @enum State FirstBoot OpenFightDebug NewGame DialogSkip GoToTarget RandomWander
 
@@ -55,19 +61,26 @@ mutable struct JobState
     randomstepsremaining::Int
     gotohere::Union{Nothing, Position}
     waiting::Bool
+    gotoheres::Vector{Position}
 
-    JobState(globe::Navmesh) = new(FirstBoot,
-                                   globe,
-                                   GameState().position,
-                                   nothing,
-                                   0,
-                                   false,
-                                   Down,
-                                   0,
-                                   25,
-                                   randomincomplete(globe),
-                                   false,
-                                  )
+    function JobState(globe::Navmesh, nogolist::Vector{Position}=[])
+        gotohere = randomincomplete(globe, nogolist)
+        gotoheres = isnothing(gotohere) ? [] : [gotohere]
+        new(
+            FirstBoot,
+            globe,
+            GameState().position,
+            nothing,
+            0,
+            false,
+            Down,
+            0,
+            25,
+            gotohere,
+            false,
+            gotoheres,
+          )
+    end
 end
 
 function open_fight_debug!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
@@ -175,7 +188,7 @@ function dojob(job::Job)::JobResult
     nav = job.globe
     journey = Journey()
 
-    s = JobState(nav)
+    s = JobState(nav, job.nogolist)
     gb = deepcopy(job.emulator0)
 
     for i in 1:job.duration
@@ -217,7 +230,7 @@ function dojob(job::Job)::JobResult
         Images.save(File{format"PNG"}(joinpath("screens", "$(job.imageprefix).end.png")), reinterpret(BGRA{N0f8}, pixels))
     end
 
-    JobResult(nav, journey)
+    JobResult(nav, journey, s.gotoheres)
 end
 
 function dojobs(jobs, results)::Nothing
@@ -230,13 +243,13 @@ end
 """
 Generate a batch of jobs to run
 """
-function genbatch(roms::Vector{String}, duration::Int, counter::Int, globe::Navmesh; copies::Int=1)::Vector{Job}
+function genbatch(roms::Vector{String}, duration::Int, counter::Int, globe::Navmesh, nogo::Vector{Position}; copies::Int=1)::Vector{Job}
     # TODO: Make this more functional instead of manually pushing to a vector
     jobs = []
     for _ in 1:copies
         for r in roms
             gb = Emulator(r)
-            push!(jobs, Job(r, duration, gb, nothing, deepcopy(globe)))
+            push!(jobs, Job(r, duration, gb, nothing, deepcopy(globe), nogo))
             counter += 1
         end
     end
@@ -258,6 +271,7 @@ function explore(;duration_min=15, copies=100, target=500)
     batchcounter = 1
     globe = Navmesh()
     journeys = Vector{Vector{Journey}}()
+    nogolist = [Position(0x00, 0x00, 0x00)]
     renderingbb = Render.BoundingBox(7200, 7200, 0, 0)
     duration = duration_min*60*60
 
@@ -271,7 +285,7 @@ function explore(;duration_min=15, copies=100, target=500)
     foreach(pid -> remote_do(dojobs, pid, jobqueue, resultqueue), workers())
 
     while length(labels(globe)) < target
-        jobs = genbatch(roms, duration, jobcounter, globe; copies=copies)
+        jobs = genbatch(roms, duration, jobcounter, globe, nogolist; copies=copies)
         bprog = Progress(length(jobs), "Batch $batchcounter ($(length(jobs))) jobs"; color = :blue, offset=batchcounter+1)
         
         @async foreach(submit_job, jobs)
@@ -286,7 +300,8 @@ function explore(;duration_min=15, copies=100, target=500)
 
         globe = Navmesh(globe, jrs.nav)
         push!(journeys, jrs.journeys)
-        renderingbb = Render.render(jrs.journeys, globe, batchcounter, animdir, renderingbb)
+        union!(nogolist, jrs.nogolist)
+        renderingbb = Render.render(jrs.journeys, globe, batchcounter, animdir, renderingbb, nogolist)
 
         update!(prog, target - length(labels(globe)))
 

@@ -8,6 +8,9 @@ using ..Nav
 include("locations.jl")
 
 function position_to_pixels(pos::Position)::Point
+    if location_to_pixels(pos.location) == Point(0, 0)
+        @info "Wrong pixel coords for location $(pos)"
+    end
     # origin + offset + circle centering
     location_to_pixels(pos.location) + Point(pos.x*16, pos.y*16) + Point(8, 8)
 end
@@ -27,7 +30,7 @@ expand(bb::BoundingBox, p::Point, padding::Int=8)::BoundingBox = BoundingBox(min
 width(bb::BoundingBox) = bb.right - bb.left
 height(bb::BoundingBox) = bb.bottom - bb.top
 
-function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0))::BoundingBox
+function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0), nogolist::Vector{Position}=[])::BoundingBox
     # map source: https://blog.vjeux.com/2023/project/pokemon-red-blue-map.html
 
     bg = readpng(joinpath(@__DIR__, "map.png"))
@@ -96,9 +99,9 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
             setcolor("black")
         end
 
-        # if o > 4
-        #     @info "$l $(outneighbor_labels(globe, l) |> collect)"
-        # end
+        if l ∈ nogolist
+            setcolor("black")
+        end
 
         try
             ngon(position_to_pixels(l) + relativeorigin, 8, 8)
