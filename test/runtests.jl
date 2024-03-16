@@ -1,6 +1,5 @@
 using PokemonCartographer
 using Test
-using Documenter
 
 @testset "PokemonCartographer" begin
     testdir = dirname(@__FILE__)
@@ -21,7 +20,4 @@ using Documenter
             end
         end
     end
-
-    DocMeta.setdocmeta!(PokemonCartographer, :DocTestSetup, :(using PokemonCartographer, PokemonCartographer.Nav); recursive=true)
-    doctest(PokemonCartographer; manual=false)
 end

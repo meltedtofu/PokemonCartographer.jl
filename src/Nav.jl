@@ -29,6 +29,8 @@ function asbutton(d::Direction)::Button
         ButtonDown
     elseif d == Left
         ButtonLeft
+    else
+        @assert false "Unknown direction $d"
     end
 end
 
@@ -41,6 +43,8 @@ function asdirection(b::Button)::Direction
         Down
     elseif b == ButtonLeft
         Left
+    else
+        @assert false "Unknown button $b"
     end
 end
 
@@ -54,7 +58,7 @@ function asdirection(facing::UInt8)::Direction
     elseif facing == 0x0c
         Right
     else
-        throw("unknown direction $facing")
+        @assert false "Unknown facing $facing"
     end
 end
 
@@ -67,6 +71,8 @@ function asnowhere(b::Button)::Position
         nowhereleft
     elseif b == ButtonRight
         nowhereright
+    else
+        @assert false "Unknown button $b"
     end
 end
 

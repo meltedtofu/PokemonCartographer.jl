@@ -47,7 +47,7 @@ mutable struct JobState
     state::State
     nav::Navmesh
     lastpos::Tuple{UInt8, UInt8, UInt8}
-    button::Union{Nothing, Button}
+    button::Button
     lastpress::Int
     wasfacingmovementdir::Bool
     facingdir::Direction
@@ -57,14 +57,14 @@ mutable struct JobState
     waiting::Bool
     gotoheres::Vector{Position}
 
-    function JobState(globe::Navmesh, nogolist::Vector{Position}=[])
+    function JobState(globe::Navmesh, nogolist::Vector{Position}=[Position(0x00, 0x00, 0x00)])
         gotohere = randomincomplete(globe, nogolist)
         gotoheres = isnothing(gotohere) ? [] : [gotohere]
         new(
             FirstBoot,
             globe,
             GameState().position,
-            nothing,
+            ButtonUp,
             0,
             false,
             Down,
@@ -95,6 +95,8 @@ function new_game!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
     elseif ("DEBUG", 1) in game.menu
         buttonstate!(gb, ButtonA, i % 2 == 0)
         js.state
+    else
+        js.state
     end
 end
 
@@ -111,10 +113,13 @@ end
 
 function go_to_target!(js::JobState, gb::Emulator, game::GameState, i::Int)::State
     buttonstate!(gb, ButtonB, false)
-    if isnothing(js.gotohere) || Position(game.position) == js.gotohere
+    gth = js.gotohere
+    if isnothing(gth)
+        RandomWander
+    elseif Position(game.position) == gth
         RandomWander
     else
-        r = route(js.nav, Position(game.position), js.gotohere)
+        r = route(js.nav, Position(game.position), gth)
         if length(r) == 0
             return RandomWander
         elseif i > js.lastpress + 16

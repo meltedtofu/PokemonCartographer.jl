@@ -27,7 +27,7 @@ expand(bb::BoundingBox, p::Point, padding::Int=8)::BoundingBox = BoundingBox(min
 width(bb::BoundingBox) = bb.right - bb.left
 height(bb::BoundingBox) = bb.bottom - bb.top
 
-function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0), nogolist::Vector{Position}=[]; renderjourneys::Bool=false)::BoundingBox
+function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0), nogolist::Vector{Position}=[Position(0x00, 0x00, 0x00)]; renderjourneys::Bool=false)::BoundingBox
     # map source: https://blog.vjeux.com/2023/project/pokemon-red-blue-map.html
 
     bg = readpng(joinpath(@__DIR__, "map.png"))
