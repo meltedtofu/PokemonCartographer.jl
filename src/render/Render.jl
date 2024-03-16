@@ -8,9 +8,6 @@ using ..Nav
 include("locations.jl")
 
 function position_to_pixels(pos::Position)::Point
-    if location_to_pixels(pos.location) == Point(0, 0)
-        @info "Wrong pixel coords for location $(pos)"
-    end
     # origin + offset + circle centering
     location_to_pixels(pos.location) + Point(pos.x*16, pos.y*16) + Point(8, 8)
 end
@@ -30,7 +27,7 @@ expand(bb::BoundingBox, p::Point, padding::Int=8)::BoundingBox = BoundingBox(min
 width(bb::BoundingBox) = bb.right - bb.left
 height(bb::BoundingBox) = bb.bottom - bb.top
 
-function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0), nogolist::Vector{Position}=[])::BoundingBox
+function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::String, bb::BoundingBox=BoundingBox(7200, 7200, 0, 0), nogolist::Vector{Position}=[]; renderjourneys::Bool=false)::BoundingBox
     # map source: https://blog.vjeux.com/2023/project/pokemon-red-blue-map.html
 
     bg = readpng(joinpath(@__DIR__, "map.png"))
@@ -46,29 +43,31 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
             bb = expand(bb, p, 8)
         end
 
-        relativeorigin = Point(-bb.left, -bb.top)
-        Drawing(width(bb), height(bb), joinpath(outdir, "frame.$(lpad(i,8,'0')).png"))
-        background("white")
-        placeimage(bg, relativeorigin)
-        setcolor("orange")
-        for j in js
-            i > length(j) && continue
+        if renderjourneys
+            relativeorigin = Point(-bb.left, -bb.top)
+            Drawing(width(bb), height(bb), joinpath(outdir, "frame.$(lpad(i,8,'0')).png"))
+            background("white")
+            placeimage(bg, relativeorigin)
+            setcolor("orange")
+            for j in js
+                i > length(j) && continue
 
-            orientation = 0
-            if j[i].orientation == Right
                 orientation = 0
-            elseif j[i].orientation == Down
-                orientation = pi/2
-            elseif j[i].orientation == Left
-                orientation = 2pi
-            elseif j[i].orientation == Up
-                orientation = 3pi/2
-            end
+                if j[i].orientation == Right
+                    orientation = 0
+                elseif j[i].orientation == Down
+                    orientation = pi/2
+                elseif j[i].orientation == Left
+                    orientation = 2pi
+                elseif j[i].orientation == Up
+                    orientation = 3pi/2
+                end
 
-            ngon(position_to_pixels(j[i].position) + relativeorigin, 8, 3, orientation)
-            do_action(:fill)
+                ngon(position_to_pixels(j[i].position) + relativeorigin, 8, 3, orientation)
+                do_action(:fill)
+            end
+            finish()
         end
-        finish()
     end
 
     # Render Heatmap
