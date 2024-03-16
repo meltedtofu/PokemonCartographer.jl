@@ -99,6 +99,26 @@ function Navmesh()::Navmesh
     n[nowhereleft] = nothing
     n[nowhereright] = nothing
 
+    n[nowhereup, nowheredown]  = Up
+    n[nowhereup, nowhereup]    = Up
+    n[nowhereup, nowhereleft]  = Up
+    n[nowhereup, nowhereright] = Up
+
+    n[nowheredown, nowheredown]  = Down
+    n[nowheredown, nowhereup]    = Down
+    n[nowheredown, nowhereleft]  = Down
+    n[nowheredown, nowhereright] = Down
+
+    n[nowhereleft, nowheredown]  = Left
+    n[nowhereleft, nowhereup]    = Left
+    n[nowhereleft, nowhereleft]  = Left
+    n[nowhereleft, nowhereright] = Left
+
+    n[nowhereright, nowheredown]  = Right
+    n[nowhereright, nowhereup]    = Right
+    n[nowhereright, nowhereleft]  = Right
+    n[nowhereright, nowhereright] = Right
+    
     n
 end
 
@@ -185,6 +205,32 @@ end
 
 Graphs.rem_edge!(n::Navmesh, from::Position, to::Position) = rem_edge!(n, code_for(n, from), code_for(n, to))
 
+"""
+    route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
+
+Find a route between `from` and `to` in the provided Navmesh, `n`.
+
+If no route exists an empty Vector will be returned instead.
+
+# Examples
+```jldoctest
+n = Navmesh()
+
+p1 = Position(0x01, 0x01, 0x01)
+p2 = Position(0x01, 0x01, 0x02)
+p3 = Position(0x01, 0x02, 0x02)
+Navmesh!(n, p1, p2, Down)
+Navmesh!(n, p2, p3, Right)
+
+route(n, p1, p3)
+
+# output
+
+2-element Vector{Direction}:
+ Down::Direction = 2
+ Right::Direction = 1
+```
+"""
 function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     try
         Graphs.a_star(n,
@@ -210,14 +256,20 @@ Select a random, incomplete vertex in the navmesh.
 Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
 """
 function randomincomplete(n::Navmesh, nogolist::Vector{Position})::Union{Position, Nothing}
-    # TODO: provide a list of positions to filter as an optional function argument. This way the caller can figure control the search process.
     threshold = (n |> Graphs.outdegree .|> d -> clamp(d, 0, 4)) |> minimum
-    selected = randomincomplete(n, threshold, nogolist)
-    if isnothing(selected) && threshold < 4
-        randomincomplete(n, threshold + 1, nogolist)
-    else
-        selected
+    selected = nothing
+    while true
+        selected = randomincomplete(n, threshold, nogolist)
+        if !isnothing(selected)
+            break
+        elseif threshold >= 4
+            break
+        else
+            threshold += 1
+        end
     end
+
+    selected
 end
 
 function randomincomplete(n::Navmesh, threshold::Int, nogolist::Vector{Position}=[Position(0x00, 0x00, 0x00)])::Union{Position, Nothing}
@@ -227,7 +279,7 @@ function randomincomplete(n::Navmesh, threshold::Int, nogolist::Vector{Position}
             Base.Fix1(findall, deg -> deg <= threshold) .|>
             i-> label_for(n, i)) |>
         collect |>
-        Base.Fix1(filter, p -> p ∉ nogolist && p.location != 0xff && p.location != 0x28) |>
+        Base.Fix1(filter, p -> p ∉ nogolist && p.location != 0xff) |>
         rand
     catch e
         nothing

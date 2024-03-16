@@ -32,7 +32,9 @@ function render(js::Vector{Journey}, globe::Navmesh, batchnum::Int, basedir::Str
 
     bg = readpng(joinpath(@__DIR__, "map.png"))
     outdir = joinpath(basedir, "batch.$(lpad(batchnum, 3, '0'))")
-    mkpath(outdir)
+    if renderjourneys
+        mkpath(outdir)
+    end
 
     gap = 200
     #gap = 1
