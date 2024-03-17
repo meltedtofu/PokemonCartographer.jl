@@ -7,10 +7,7 @@ using ..Nav
 
 include("locations.jl")
 
-function position_to_pixels(pos::Position)::Point
-    # origin + offset + circle centering
-    location_to_pixels(pos.location) + Point(pos.x*16, pos.y*16) + Point(8, 8)
-end
+position_to_pixels(pos::Position)::Point = location_to_pixels(pos.location) + Point(pos.x*16, pos.y*16) + Point(8, 8)
 
 struct BoundingBox
     top::Int
