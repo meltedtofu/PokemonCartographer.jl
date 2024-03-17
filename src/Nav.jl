@@ -13,6 +13,9 @@ struct Position
     Position(p) = new(p...)
 end
 
+# "nowhere" are special locations which are not traversable and will never have out edges.
+# The navmesh graph contains one edge per pair of locations.
+# We need one "nowhere" for each possible direction from a location.
 const nowhereup = Position(0xff, 0xff, 0xff)
 const nowheredown = Position(0xff, 0xff, 0xfe)
 const nowhereleft = Position(0xff, 0xff, 0xfd)
@@ -20,6 +23,20 @@ const nowhereright = Position(0xff, 0xff, 0xfc)
 
 @enum Direction Up Right Down Left
 
+"""
+    asbutton(d::Direction)::Button
+
+Convert directions to buttons.
+
+# Examples
+```jldoctest
+asbutton(Up)
+
+# output
+
+ButtonUp::Button = 64
+```
+"""
 function asbutton(d::Direction)::Button
     if d == Up
         ButtonUp
@@ -34,6 +51,20 @@ function asbutton(d::Direction)::Button
     end
 end
 
+"""
+    asdirection(b::Button)::Direction
+
+Convert buttons to directions.
+
+# Examples
+```jldoctest
+asdirection(ButtonUp)
+
+# output
+
+Up::Direction = 0
+```
+"""
 function asdirection(b::Button)::Direction
     if b == ButtonUp
         Up
@@ -48,6 +79,20 @@ function asdirection(b::Button)::Direction
     end
 end
 
+"""
+    asdirection(facing::UInt8)::Direction
+
+convert facing byte to direction
+
+# Examples
+```jldoctest
+asdirection(0x04)
+
+# output
+
+Up::Direction = 0
+```
+"""
 function asdirection(facing::UInt8)::Direction
     if facing == 0x00
         Down
@@ -62,6 +107,11 @@ function asdirection(facing::UInt8)::Direction
     end
 end
 
+"""
+    asnowhere(b::Button)::Position
+
+Find the correct nowhere location.
+"""
 function asnowhere(b::Button)::Position
     if b == ButtonUp    
         nowhereup
@@ -94,6 +144,14 @@ const Journey = Vector{Placement}
 # Vertex representation in DiGraph (aka "Code"), Weight Function, Weight.
 const Navmesh{C, Wf, W} = MetaGraph{C, Graphs.SimpleGraphs.SimpleDiGraph{C}, Position, Nothing, Direction, Nothing, Wf, W}
 
+"""
+    Navmesh()::Navmesh
+
+Create a new Navmesh.
+
+Includes the `nowhere`s as a fully connected graph.
+This way the `nowhere`s always exist and are considered "fully explored"(.)
+"""
 function Navmesh()::Navmesh
     n = MetaGraph(DiGraph();
                   vertex_data_type=Nothing,
@@ -128,6 +186,15 @@ function Navmesh()::Navmesh
     n
 end
 
+"""
+    Navmesh!(n::Navmesh, from::Position, to::Position, d::Direction)::Nothing
+
+Add an edge in `n` between `from` and `to` labeled as direction `d`.
+
+`from` and `to` do not need to exist.
+
+This will overwrite any previous edge between these two nodes.
+"""
 function Navmesh!(n::Navmesh, from::Position, to::Position, d::Direction)::Nothing
     n[from] = nothing
     n[to] = nothing
@@ -136,6 +203,13 @@ function Navmesh!(n::Navmesh, from::Position, to::Position, d::Direction)::Nothi
     nothing
 end
 
+"""
+    Navmesh(a::Navmesh, b::Navmesh)::Navmesh
+
+Merge two `Navmesh`es - `a` and `b` - into a new `Navmesh`.
+
+Prioritizes edges to somewhere over edges to nowhere when resolving conflicts.
+"""
 function Navmesh(a::Navmesh, b::Navmesh)::Navmesh
     n = Navmesh()
 
@@ -154,6 +228,11 @@ function Navmesh(a::Navmesh, b::Navmesh)::Navmesh
     n
 end
 
+"""
+    Navmesh!(a0::Navmesh, a::Navmesh)::Nothing
+
+Merge `a` into `a0` in place. See `Navmesh(a::Navmesh, b::Navmesh)::Navmesh` for more details.
+"""
 function Navmesh!(a0::Navmesh, a::Navmesh)::Nothing
     for l in labels(a)
         a0[l] = nothing
@@ -252,12 +331,32 @@ function route(n::Navmesh, from::Position, to::Position)::Vector{Direction}
     end
 end
 
+"""
+    connected(n::Navmesh, from::Position, to::Position)::Bool
+
+Predicate to check if two nodes are connected.
+
+# Examples
+```jldoctest
+n = Navmesh()
+p1 = Position(0x01, 0x01, 0x01)
+p2 = Position(0x01, 0x01, 0x02)
+p3 = Position(0x01, 0x02, 0x02)
+Navmesh!(n, p1, p2, Down)
+Navmesh!(n, p2, p3, Right)
+
+connected(n, p1, p3)
+
+# output
+
+true
+```
+"""
 connected(n::Navmesh, from::Position, to::Position)::Bool = from == to || route(n, from, to) |> length > 0
 
-# TODO: Render Navmesh as Matrix
-# TODO: Render Navmesh as Ascii
-
 """
+    randomincomplete(n::Navmesh, nogolist::Vector{Position})::Union{Position, Nothing}
+
 Select a random, incomplete vertex in the navmesh.
 Incomplete vertices have less than four outedges - e.g. Up, Down, Left, Right.
 """
@@ -294,6 +393,11 @@ end
 
 exploreddirections(n::Navmesh, p::Position)::Vector{Direction} = unique([n[p, l] for l in outneighbor_labels(n, p)])
 
+"""
+    goesnowhere(n::Navmesh, p::Position, d::Direction)::Bool
+
+Predicate to check if a direction goes to nowhere.
+"""
 function goesnowhere(n::Navmesh, p::Position, d::Direction)::Bool
     try
         has_vertex(n, code_for(n, p)) && has_edge(n, code_for(n, p), code_for(n, asnowhere(d)))
@@ -304,6 +408,11 @@ end
 
 goesnowhere(n::Navmesh, p::Position, b::Button) = goesnowhere(n, p, asdirection(b))
 
+"""
+    goessomewhere(n::Navmesh, p::Position, d::Direction)::Bool
+
+Predicate to check if a direction exists goes to somewhere.
+"""
 function goessomewhere(n::Navmesh, p::Position, d::Direction)::Bool
     try
         has_vertex(n, code_for(n, p)) && d ∈ exploreddirections(n, p) && !has_edge(n, code_for(n, p), code_for(n, asnowhere(asbutton(d))))

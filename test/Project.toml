@@ -1,5 +1,6 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+GameBoy = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Luxor = "ae8d54c2-7ccd-5906-9d76-62fc9837b5bc"
 Supposition = "5a0628fe-1738-4658-9b6d-0b7605a9755b"

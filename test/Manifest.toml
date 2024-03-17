@@ -2,7 +2,7 @@
 
 julia_version = "1.10.2"
 manifest_format = "2.0"
-project_hash = "86feee41bfa4986181f8298b16119c2486feb68a"
+project_hash = "9684269c46335fa195f61799877f0d0aa9f49bf2"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -162,6 +162,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "aa31987c2ba8704e23c6c8ba8a4f769d5d7e4f91"
 uuid = "559328eb-81f9-559d-9380-de523a88c83c"
 version = "1.0.10+0"
+
+[[deps.GameBoy]]
+deps = ["OffsetArrays"]
+git-tree-sha1 = "83b2714d7b4be07a533b041fa7b9a65577841323"
+uuid = "6fb4242f-1e24-4c34-aea5-7820002b36ca"
+version = "0.9.4"
 
 [[deps.Gettext_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "XML2_jll"]
@@ -427,6 +433,17 @@ version = "1.0.2"
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.2.0"
+
+[[deps.OffsetArrays]]
+git-tree-sha1 = "6a731f2b5c03157418a20c12195eb4b74c8f8621"
+uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+version = "1.13.0"
+
+    [deps.OffsetArrays.extensions]
+    OffsetArraysAdaptExt = "Adapt"
+
+    [deps.OffsetArrays.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 
 [[deps.Ogg_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]

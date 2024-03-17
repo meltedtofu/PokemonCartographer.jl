@@ -32,7 +32,7 @@ end
 
 readmeifchanged()
 
-DocMeta.setdocmeta!(PokemonCartographer, :DocTestSetup, :(using PokemonCartographer, PokemonCartographer.Nav); recursive=true)
+DocMeta.setdocmeta!(PokemonCartographer, :DocTestSetup, :(using PokemonCartographer, PokemonCartographer.Nav, GameBoy); recursive=true)
 
 makedocs(sitename = "PokemonCartographer.jl",
          format = Documenter.HTML(repolink="github.com/meltedtofu/PokemonCartographer.jl.git", edit_link=nothing),

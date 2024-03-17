@@ -1,5 +1,8 @@
 using PokemonCartographer.Nav
 
+using PokemonCartographer.Nav: asbutton, asdirection
+using GameBoy: Button, ButtonUp, ButtonRight, ButtonDown, ButtonLeft
+
 @testset "Navmesh" begin
     @testset "Basic" begin
         n = Navmesh()
@@ -40,5 +43,14 @@ using PokemonCartographer.Nav
         @test [] == route(n1, p1, p6)
         @test [] == route(n2, p1, p6)
         @test [Down, Right, Up, Down, Right] == route(n, p1, p6)
+    end
+
+    @testset "Type Conversions" begin
+        @testset "Button->Direction->Button round trip" begin
+            @test asbutton(asdirection(ButtonUp))    == ButtonUp
+            @test asbutton(asdirection(ButtonDown))  == ButtonDown
+            @test asbutton(asdirection(ButtonLeft))  == ButtonLeft
+            @test asbutton(asdirection(ButtonRight)) == ButtonRight
+        end
     end
 end
