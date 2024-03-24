@@ -6,6 +6,7 @@ using ProgressMeter
 using Random
 using MetaGraphsNext: labels
 using Distributed
+using Serialization
 
 include("Nav.jl")
 using .Nav
@@ -23,7 +24,7 @@ function genbatch(roms::Vector{String}, duration::Int, counter::Int, globe::Navm
     for _ in 1:copies
         for r in roms
             gb = Emulator(r)
-            push!(jobs, Job(r, duration, gb, nothing, deepcopy(globe), nogo))
+            push!(jobs, Job(r, duration, gb, nothing, deepcopy(globe), deepcopy(nogo)))
             counter += 1
         end
     end
@@ -35,7 +36,7 @@ Create a Navmesh by playing the game.
 
 Starting with a list of roms and save states, spawn a worker for each pair and merge the resulting navmeshes.
 """
-function explore(;duration_min=15, copies=100, target=500)
+function explore(;duration_min=15, copies=100, target=500, checkpoint=false)
     roms = ["BLUEMONS.gb"] .|> r -> joinpath(@__DIR__, "..", "roms", r)
     animdir = joinpath(@__DIR__, "..", "anim")
     rm(animdir, force=true, recursive=true)
@@ -49,6 +50,21 @@ function explore(;duration_min=15, copies=100, target=500)
     renderingbb = Render.BoundingBox(7200, 7200, 0, 0)
     duration = duration_min*60*60
 
+    checkpointdir = joinpath(@__DIR__, "..", "checkpoints")
+    if checkpoint
+        if isdir(checkpointdir)
+            checkpoints = readdir(checkpointdir)
+            if length(checkpoints) > 0
+                globe = checkpoints |> last |> c -> joinpath(checkpointdir, c) |> deserialize
+                @info "Loaded checkpoint $(checkpoints |> last) with $(length(labels(globe))) locations."
+            end
+            rm(checkpointdir, force=true, recursive=true)
+        end
+
+        mkdir(checkpointdir)
+        serialize(joinpath(checkpointdir, "$(lpad(0, 5, '0')).navmesh.jls"), globe)
+    end
+
     prog = ProgressThresh(0.1; desc="Exploring...", color=:blue)
     update!(prog, target)
 
@@ -59,9 +75,11 @@ function explore(;duration_min=15, copies=100, target=500)
     foreach(pid -> remote_do(dojobs, pid, jobqueue, resultqueue), workers())
 
     scores = []
+    laststuck = 0
+    boost = 1
 
     while length(labels(globe)) < target
-        jobs = genbatch(roms, duration, jobcounter, globe, nogolist; copies=copies)
+        jobs = genbatch(roms, duration, jobcounter, globe, nogolist; copies=copies*boost)
         bprog = Progress(length(jobs), "Batch $batchcounter ($(length(jobs))) jobs"; color = :blue, offset=batchcounter+1)
         
         @async foreach(submit_job, jobs)
@@ -83,9 +101,17 @@ function explore(;duration_min=15, copies=100, target=500)
 
         push!(scores, length(labels(globe)))
 
-        if batchcounter > 3 && diff(scores)[end-2:end] |> iszero 
+        if batchcounter > 3+laststuck && diff(scores)[end-2:end] |> iszero
             nogolist = [Position(0x00, 0x00, 0x00)] # Stuck. Try clearing the nogolist to revisit these nodes
             @warn "Stuck. Clearing the nogolist and trying again."
+            laststuck = batchcounter + 3
+            boost = 10
+        else
+            boost = max(boost - 2, 1)
+        end
+
+        if checkpoint
+            serialize(joinpath(checkpointdir, "$(lpad(batchcounter, 5, '0')).navmesh.jls"), globe)
         end
 
         batchcounter += 1
